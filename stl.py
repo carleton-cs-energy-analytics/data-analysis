@@ -46,7 +46,7 @@ def create_evans_csv():
         rm_ids = []
         rm_string = 'EV.RM' + room
         temp_string = rm_string + '.RT'
-        set_string = rm_string + '.SP'
+        #set_string = rm_string + '.SP'
         vent_string = rm_string + '.V'
         vsp_string = rm_string + 'VSP'
 
@@ -58,13 +58,13 @@ def create_evans_csv():
         temp_id = cur.fetchone()[0]
         cur.close()
         
-        cur = conn.cursor()
-        set_query = '''SELECT point_id
-                   FROM public.points
-                   WHERE name = %s'''
-        cur.execute(set_query, (set_string, ))
-        set_id = cur.fetchone()[0]
-        cur.close()
+       # cur = conn.cursor()
+        #set_query = '''SELECT point_id
+         #          FROM public.points
+          #         WHERE name = %s'''
+        #cur.execute(set_query, (set_string, ))
+        #set_id = cur.fetchone()[0]
+        #cur.close()
 
         cur = conn.cursor()
         vent_query = '''SELECT point_id
@@ -83,7 +83,7 @@ def create_evans_csv():
         cur.close()
         
         rm_ids.append(str(temp_id))
-        rm_ids.append(str(set_id))
+        #rm_ids.append(str(set_id))
         rm_ids.append(str(vent_id))
         rm_ids.append(str(vsp_id))
         
@@ -172,17 +172,17 @@ def detect_evans_anomalies(days=5, anom_thres=36,  plot_ser=False, plot_comp=Fal
     Returns: dataframes with rooms as column indeces and point types as row indeces, one containing anomaly counts and the other containing a list of the anomalies for each room/point
     '''
     building_df = pd.read_csv(EVANS_POINTS_FILE, dtype=str)
-    building_df.index=['temp', 'set', 'vent', 'virtual set']
-    anom_counts = pd.DataFrame(index=['temp', 'vent',  'set temp diff', 'vsp set diff'], dtype=int) 
-    anom_rooms = pd.DataFrame(index=['temp', 'vent', 'set temp diff', 'vsp set diff'], dtype=str)    
+    building_df.index=['temp', 'vent', 'virtual set']
+    anom_counts = pd.DataFrame(index=['temp', 'vent',  'set temp diff'], dtype=int) 
+    anom_rooms = pd.DataFrame(index=['temp', 'vent', 'set temp diff'], dtype=str)    
     for column in building_df:
         room_ids = building_df.loc[:,column]
-        room_anoms, num_room_anoms = stl_evans_room(room_ids, days, building_name="EV", plot_ser=plot_ser, plot_comp=plot_comp, plot_anom=plot_anom)
+        room_anoms, num_room_anoms = detect_evans_room(room_ids, days, building_name="EV", plot_ser=plot_ser, plot_comp=plot_comp, plot_anom=plot_anom)
         anom_counts[column] = num_room_anoms
-        anom_rooms[column] = [anomalies_report_string(room_anoms[0]), anomalies_report_string(room_anoms[1]), anomalies_report_string(room_anoms[2]), anomalies_report_string(room_anoms[3])]
+        anom_rooms[column] = [anomalies_report_string(room_anoms[0]), anomalies_report_string(room_anoms[1]), anomalies_report_string(room_anoms[2])]
     return anom_rooms, anom_counts
 
-def stl_evans_room(ids, days, building_name="", plot_ser=False, plot_comp=False, plot_anom=False):
+def detect_evans_room(ids, days, building_name="", plot_ser=False, plot_comp=False, plot_anom=False):
     '''
     Description: runs stl on the given points in the room. MODIFY THIS METHOD to change which series stl is run on. Currently running on: room temperature, vent angle, difference between set and room temp, and difference between set and virtual set values. 
     Parameters: an array of int point id's for a given room and a number of days. Optional boolean plot settings. 
@@ -190,24 +190,65 @@ def stl_evans_room(ids, days, building_name="", plot_ser=False, plot_comp=False,
     '''
     room = ids.name
     temp_id = ids.loc['temp']
-    set_id = ids.loc['set']
     vent_id = ids.loc['vent']
     vsp_id = ids.loc['virtual set']
     temp_name_str = building_name + str(room) + 'Temp'
-    temp_anom = stl_point_anomalies(temp_name_str, temp_id, days, plot_ser=plot_ser, plot_comp=plot_comp, plot_anom=plot_anom)
-    vent_name_str = building_name + str(room) + 'VentAngle'
-    vent_anom = stl_point_anomalies(vent_name_str, vent_id, days, plot_ser=plot_ser, plot_comp=plot_comp, plot_anom=plot_anom)
-    diff_name_str = building_name + str(room) + 'SetTempDiff'
-    diff_anom = stl_point_anomalies(diff_name_str, set_id, days, second_point_id=temp_id, plot_ser=plot_ser, plot_comp=plot_comp, plot_anom=plot_anom)
-    vsp_diff_name_str = building_name + str(room) + 'VirtualSetDiff'
-    vsp_diff_anom = stl_point_anomalies(vsp_diff_name_str, vsp_id, days, second_point_id=set_id, plot_ser=plot_ser, plot_comp=plot_comp, plot_anom=plot_anom)
+    temp_anom = temp_anomalies(temp_name_str, temp_id, days, plot_anom=plot_anom)
+    vent_name_str = building_name + str(room) + 'ValveAngle'
+    vent_anom = valve_anomalies(vent_name_str, vent_id, days, plot_anom=plot_anom) 
+    diff_name_str = building_name + str(room) + 'VSetTempDiff'
+    diff_anom = virtset_temp_diff_anomalies(diff_name_str, vsp_id, days, second_point_id=temp_id, plot_anom=plot_anom)
     num_temp_anom = len(temp_anom)
     num_diff_anom = len(diff_anom)
     num_vent_anom = len(vent_anom)
-    num_vsp_diff_anom = len(vsp_diff_anom)
-    num_room_anoms = [num_temp_anom, num_vent_anom, num_diff_anom, num_vsp_diff_anom]
-    room_anoms = [temp_anom, vent_anom, diff_anom, vsp_diff_anom]
+    num_room_anoms = [num_temp_anom, num_vent_anom, num_diff_anom]
+    room_anoms = [temp_anom, vent_anom, diff_anom]
     return room_anoms, num_room_anoms
+
+def temp_anomalies(name_str, point_id, days, plot_anom=False, heur_upperbound=90, heur_lowerbound=60, heur_emergency_temp=40):
+    series_df, decomp, prior_df, detection_df, index, prior_index, detection_index = stl_float(point_id, days)
+    stl_expected, greaterbound, lesserbound = get_expected_bounds(decomp, prior_df)
+    greaterbound = add_heur_to_bound(greaterbound, heur_upperbound)
+    lesserbound = add_heur_to_bound(lesserbound, heur_lowerbound, upper=False)
+    anomalies = find_anomalies(greaterbound, lesserbound, detection_df, detection_index)
+    if plot_anom:
+        plot_anomalies(name_str, series_df, index, point_id, days, predicted=stl_expected, upperbound=greaterbound, lowerbound=lesserbound, heur_upper=heur_upperbound, heur_lower=heur_lowerbound, emerg_bound=heur_emergency_temp)
+    return anomalies
+
+def valve_anomalies(name_str, point_id, days, plot_anom=False, heur_limit=95, heur_limit_time=1):
+    series_df, prior_df, detection_df, index, prior_index, detection_index = create_float_series(point_id, days)
+    beyond_lim_count = 0
+    anomalies = []
+    for i in range (96):
+        if (detection_df.values[i] >= heur_limit):
+            beyond_lim_count += 1
+        else: 
+            beyond_lim_count = 0
+        if (beyond_lim_count >=4):
+            anomalies.append((detection_index[i], 'Valve too open for too long', detection_df.values[i]))
+    if plot_anom:
+        plot_anomalies(name_str, series_df, index, point_id, days, heur_upper=heur_limit)
+    return anomalies
+
+def virtset_temp_diff_anomalies(name_str, point_id, days, second_point_id, plot_anom=False, heur_upper_limit=5, heur_lower_limit=-5, heur_time_limit=1):
+    series_df, decomp, prior_df, detection_df, index, prior_index, detection_index, point_id = stl_diff(point_id, second_point_id, days)
+    stl_expected, greaterbound, lesserbound= get_expected_bounds(decomp, prior_df)
+    greaterbound = add_heur_to_bound(greaterbound, heur_upper_limit)
+    lesserbound = add_heur_to_bound(lesserbound, heur_lower_limit, upper=False)
+    anomalies = find_anomalies(greaterbound, lesserbound, detection_df, detection_index)
+    if plot_anom:
+        plot_anomalies(name_str, series_df, index, point_id, days, predicted=stl_expected, upperbound=greaterbound, lowerbound=lesserbound, heur_upper = heur_upper_limit, heur_lower=heur_lower_limit)
+    return anomalies
+
+def add_heur_to_bound(bound, heur, upper=True):
+    for i in range(96):
+        if (upper):
+            if (bound[i] > heur):
+                bound[i] = heur    
+        else:
+            if (bound[i] < heur):
+                bound[i] = heur 
+    return bound
 
 
 
@@ -254,7 +295,7 @@ def anomalies_report_string(anomalies):
     '''
     report = ""
     for anomaly in anomalies:
-        report = report + "Anomaly at " + str(anomaly[0]) + ": value too " + anomaly[1] + ". (bound, anomaly_value): (" + str(anomaly[2]) + ", " + str(anomaly[3]) + ")\n"
+        report = report + "Anomaly at " + str(anomaly[0]) + ": value too " + anomaly[1] + ". (bound, anomaly_value): (" + str(anomaly[2]) +")\n"
     return report
 
 def find_anomalies(greaterbound, lesserbound, series_df, index):
@@ -302,21 +343,34 @@ def plot_series(series_df, index, point_id, days):
     plt.savefig("point{0}series{1}".format(point_id, index[len(index)-1][:10]))
 
 
-def plot_anomalies(name_id, series_df, predicted, upperbound, lowerbound, index, point_id, days):
+def plot_anomalies(name_id, series_df, index, point_id, days, predicted=None, upperbound=None, lowerbound=None, heur_upper=None, heur_lower=None, emerg_bound=None):
     '''
     Description: Saves a png file of the plot of the series, expected value for the entire series, and the bounds for the detection time frame
     Parameters: the series dataframe, the expected series and bounds arrays, datetime index array,  point_id and days
     '''
-    s = series_df.values.tolist()
-    e = predicted.tolist()
-    u = upperbound.tolist()
-    l = lowerbound.tolist()
+    s = series_df.values.tolist() 
     plt.figure(figsize=(70,45))
     plt.rcParams.update({'font.size': 40})
     plt.plot(index, s, marker='', linestyle='-', label='Values', linewidth=4)
-    plt.plot(index, e, marker='', linestyle='-', label='Predicted', linewidth=4)
-    plt.plot(index[-96::], u, marker='', linestyle='-', label='Upper Bound', linewidth=4)
-    plt.plot(index[-96::], l, marker='', linestyle='-', label='Lower Bound', linewidth=4)
+    if (predicted is not None):
+        #e = predicted.tolist()
+        e = predicted
+        plt.plot(index, e, marker='', linestyle='-', label='Predicted', linewidth=4)
+    if (upperbound is not None):
+        u = upperbound.tolist()
+        plt.plot(index[-96::], u, marker='', linestyle='-', label='Upper Bound', linewidth=4)
+    if (lowerbound is not None):
+        l = lowerbound.tolist()
+        plt.plot(index[-96::], l, marker='', linestyle='-', label='Lower Bound', linewidth=4)
+    if (heur_upper is not None):
+        h_u = [heur_upper] * 96
+        plt.plot(index[-96::], h_u, marker='', linestyle='-', label='Max Bound', linewidth=4)
+    if (heur_lower is not None):
+        h_l = [heur_lower] * 96
+        plt.plot(index[-96::], h_l, marker='', linestyle='-', label='Min Bound', linewidth=4)
+    if (emerg_bound is not None):
+        e_b = [emerg_bound] * 96
+        plt.plot(index[-96::], e_b, marker='', linestyle='-', label='Emergency', linewidth=4)
     plt.xlabel("time")
     plt.ylabel("value")
     plt.axvline(x=index[-96])
@@ -390,9 +444,10 @@ def csv_to_html(filename):
     html_file.close()
 
 def main():
+    #create_evans_csv()
     evans_anomalies, evans_anom_counts = detect_evans_anomalies(plot_anom=True)
-    evans_anomalies.to_csv('evans_anomalies.csv')
-    evans_anom_counts.to_csv('evans_anom_counts.csv')
+    evans_anomalies.transpose().to_csv('evans_anomalies.csv')
+    evans_anom_counts.transpose().to_csv('evans_anom_counts.csv')
     csv_to_html('evans_anom_counts.csv')
     csv_to_html('evans_anomalies.csv')
     os.system('mv -f %s %s' % ('evans_anomalies.csv', CSV_DIRECTORY))
