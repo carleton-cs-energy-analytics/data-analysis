@@ -1,4 +1,6 @@
 # stl.py
+#Created by Owen Szafran 01/2021
+#Last Modified: 4/29/2021
 
 #libraries for moving files to frontend
 import os
@@ -90,7 +92,7 @@ def create_evans_csv():
         evans_df[room] = rm_ids
         evans_df.to_csv('evans_points.csv', index=False)
 	
-def values_in_last_n_days(point_id, days):
+def values_in_last_n_days(point_id, days, days_ago=0):
     '''
     Description: creating and running a query for a point from the API
     Parameters: int point_id to be queried, int number of days to get values from
@@ -98,12 +100,13 @@ def values_in_last_n_days(point_id, days):
     '''
     cur = conn.cursor()
     limit = 96*days
+    offset_value = 96*days_ago
     query = '''SELECT *
                FROM values
                WHERE point_id = %s
                ORDER BY timestamp DESC
-               LIMIT %s'''
-    cur.execute(query, (point_id, limit))
+               LIMIT %s OFFSET %s'''
+    cur.execute(query, (point_id, limit, offset_value))
     values = cur.fetchall()
     cur.close()
     return values
@@ -114,7 +117,7 @@ def create_float_series(point_id, days):
     Parameters: int point_id to be queried, int number of days to get values from
     Returns: Dataframes for fullseries, detection series (the last day), and prior series (values before the last day), array indices corresponding to each dataframe
     '''
-    values = values_in_last_n_days(point_id, days)
+    values = values_in_last_n_days(point_id, days, days_ago=45)
     times_arr = [] 
     vals_arr = []
     for value in values:
@@ -212,7 +215,7 @@ def temp_anomalies(name_str, point_id, days, plot_anom=False, heur_upperbound=90
     lesserbound = add_heur_to_bound(lesserbound, heur_lowerbound, upper=False)
     anomalies = find_anomalies(greaterbound, lesserbound, detection_df, detection_index)
     if plot_anom:
-        plot_anomalies(name_str, series_df, index, point_id, days, predicted=stl_expected, upperbound=greaterbound, lowerbound=lesserbound, heur_upper=heur_upperbound, heur_lower=heur_lowerbound, emerg_bound=heur_emergency_temp)
+        plot_anomalies(name_str, series_df, index, point_id, days, predicted=stl_expected, upperbound=greaterbound, lowerbound=lesserbound, heur_upper = heur_upperbound, heur_lower=heur_lowerbound, emerg_bound=heur_emergency_temp) 
     return anomalies
 
 def valve_anomalies(name_str, point_id, days, plot_anom=False, heur_limit=95, heur_limit_time=1):
@@ -380,7 +383,7 @@ def plot_anomalies(name_id, series_df, index, point_id, days, predicted=None, up
     plt.title("{0} over last {1} days".format(name_id, days))
     filename = "{0}Anomalies".format(name_id)
     plt.savefig(filename)
-    os.system('mv -f %s %s' % (filename + '.png', IMAGES_DIRECTORY))
+    #os.system('mv -f %s %s' % (filename + '.png', IMAGES_DIRECTORY))
     plt.close()
 
 def plot_trend(decomposed_series, index, point_id, days):
@@ -446,15 +449,11 @@ def csv_to_html(filename):
 def main():
     #create_evans_csv()
     evans_anomalies, evans_anom_counts = detect_evans_anomalies(plot_anom=True)
-    evans_anomalies.transpose().to_csv('evans_anomalies.csv')
-    evans_anom_counts.transpose().to_csv('evans_anom_counts.csv')
-    csv_to_html('evans_anom_counts.csv')
-    csv_to_html('evans_anomalies.csv')
-    os.system('mv -f %s %s' % ('evans_anomalies.csv', CSV_DIRECTORY))
-    os.system('mv -f %s %s' % ('evans_anom_counts.csv', CSV_DIRECTORY))
-    os.system('mv -f %s %s' % ('evans_anomalies.html', CSV_DIRECTORY))
-    os.system('mv -f %s %s' % ('evans_anom_counts.html', CSV_DIRECTORY))
+    #evans_anomalies.transpose().to_csv('evans_anomalies.csv')
+    #evans_anom_counts.transpose().to_csv('evans_anom_counts.csv')
 
+    #os.system('mv -f %s %s' % ('evans_anomalies.csv', CSV_DIRECTORY))
+    #os.system('mv -f %s %s' % ('evans_anom_counts.csv', CSV_DIRECTORY))
 
 if __name__ == '__main__':
     main()
