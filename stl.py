@@ -19,6 +19,7 @@ import statsmodels.api as sm
 import pandas as pd
 from stldecompose import decompose, forecast 
 from stldecompose.forecast_funcs import (drift, seasonal_naive)
+from sklearn.ensemble import IsolationForest
 
 # import the psycopg2 database adapter for PostgreSQL
 import psycopg2
@@ -178,12 +179,39 @@ def detect_evans_anomalies(days=5, anom_thres=36,  plot_ser=False, plot_comp=Fal
     building_df.index=['temp', 'vent', 'virtual set']
     anom_counts = pd.DataFrame(index=['temp', 'vent',  'set temp diff'], dtype=int) 
     anom_rooms = pd.DataFrame(index=['temp', 'vent', 'set temp diff'], dtype=str)    
+    
     for column in building_df:
         room_ids = building_df.loc[:,column]
         room_anoms, num_room_anoms = detect_evans_room(room_ids, days, building_name="EV", plot_ser=plot_ser, plot_comp=plot_comp, plot_anom=plot_anom)
         anom_counts[column] = num_room_anoms
         anom_rooms[column] = [anomalies_report_string(room_anoms[0]), anomalies_report_string(room_anoms[1]), anomalies_report_string(room_anoms[2])]
+
+    forest_arr = isolation_forest(building_df, days)
+    anom_counts.append(forest_arr)
+
     return anom_rooms, anom_counts
+
+def isolation_forest(building_df, days):
+    temp_arr = []
+    for column in building_df:
+        room_ids = building_df.loc[:,column]
+        temp_id = room_ids.loc['temp']
+        vsp_id = room_ids.loc['virtual set']
+        temp_series, temp_prior_df, temp_detection_df, index, prior_index, detection_index = create_float_series(temp_id, days)
+        vsp_series, vsp_prior_df, vsp_detection_df, vsp_index, vsp_prior_index, vsp_detection_index = create_float_series(vsp_id, days)
+        diff_series = vsp_series.sub(temp_series).fillna(value=0, axis=0)[-1*days*96::4]
+        temp_arr.append(diff_series)
+    
+    clf = IsolationForest(random_state=0).fit(temp_arr)
+    unweighted = clf.predict(temp_arr)
+    weighted = pd.DataFrame(index=['forest'], dtype=str)
+    for i in range(len(unweighted)):
+        if unweighted[i] == 1:
+            weighted[i] = 0
+        else:
+            weighted[i] = 10
+  
+    return weighted
 
 def detect_evans_room(ids, days, building_name="", plot_ser=False, plot_comp=False, plot_anom=False):
     '''
