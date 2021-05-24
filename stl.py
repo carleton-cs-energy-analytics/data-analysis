@@ -38,60 +38,41 @@ conn = psycopg2.connect(
 EVANS_POINTS_FILE = "/var/www/backend/data-analysis/evans_points.csv"
 CSV_DIRECTORY = "/var/www/frontend/static/csv-files"
 IMAGES_DIRECTORY = "/var/www/frontend/static/images"
-def create_evans_csv():
+def create_csv(building_name):
+    df = pd.DataFrame(dtype=str)
+    cur = conn.cursor()
     '''
-    Description: Gets all point ID's from the API from the hardcoded list of rooms in Evans. Creates a csv containing the points.
+    Description: Gets all point ID's of three specific points (Room Temp, Valve, and Virtual Room Temp Setpoint) from the Database
+    for each room that has those points in a certain building. Creates a csv containing the rooms and their points.
     '''
-    evans_rooms = ('003', '102', '106', '107', '108', '109', '111', '112', '114', '116', '118', '119', '120', '121', '122', '200', '202', '203', '204', '205', '206', '207', '208', '209', '211', '212', '213', '214', '215', '216', '300', '302', '303', '304', '305', '306', '307', '308', '309', '311', '312', '313', '314', '315', '316', '400', '401', '402', '403', '404', '405', '406', '407', '411', '412', '413', '414', '415', 'B4', 'G04', 'G05', 'G06', 'G07', 'G08', 'G09', 'G10', 'G11', 'G14', 'G16', 'G17', 'G18', 'G19', 'G20', 'G21', 'G26')
-    #evans_df = pd.DataFrame(index=['temp', 'set', 'vent', 'virtual set'], dtype=str)
-    evans_df = pd.DataFrame(dtype=str)
-    for room in evans_rooms:
-        rm_ids = []
-        rm_string = 'EV.RM' + room
-        temp_string = rm_string + '.RT'
-        #set_string = rm_string + '.SP'
-        vent_string = rm_string + '.V'
-        vsp_string = rm_string + 'VSP'
+    building_query = '''SELECT building_id FROM buildings WHERE name = '{0}' '''.format(building_name)
+    cur.execute(building_query)
+    building_id = cur.fetchone()[0]
 
-        cur = conn.cursor()
-        temp_query = '''SELECT point_id
-                   FROM public.points
-                   WHERE name = %s'''
-        cur.execute(temp_query, (temp_string, ))
-        temp_id = cur.fetchone()[0]
-        cur.close()
-        
-       # cur = conn.cursor()
-        #set_query = '''SELECT point_id
-         #          FROM public.points
-          #         WHERE name = %s'''
-        #cur.execute(set_query, (set_string, ))
-        #set_id = cur.fetchone()[0]
-        #cur.close()
+    # input the tag_ids of the three types of points you want from each room
+    tag_id1 = 3 # Room Temperature
+    tag_id2 = 6 # Valve
+    tag_id3 = 10 # Virtual Room Temperature Setpoint
 
-        cur = conn.cursor()
-        vent_query = '''SELECT point_id
-                   FROM public.points
-                   WHERE name = %s'''
-        cur.execute(vent_query, (vent_string, ))
-        vent_id = cur.fetchone()[0]
-        cur.close()
+    # Gets all the rooms and point_ids for rooms with 
+    all_query = '''WITH DR as (SELECT D.device_id, R.name from rooms as R JOIN devices as D ON D.room_id = R.room_id WHERE R.building_id = {0} AND R.name NOT LIKE 'UnID%')
+                    SELECT P3.room, pid1, pid2, pid3 FROM (SELECT P1.point_id as pid1, P2.point_id as pid2, P2.name as room FROM (SELECT P.point_id, DR.name FROM points as P
+                    JOIN DR ON DR.device_id = P.device_id WHERE P.point_id IN (SELECT point_id FROM points_tags WHERE tag_id = {1})) as P1
+                    JOIN (SELECT P.point_id, DR.name FROM points as P JOIN DR ON DR.device_id = P.device_id WHERE P.point_id IN (SELECT point_id FROM points_tags WHERE tag_id = {2})) as P2 ON P1.name=p2.name) as P4
+                    JOIN (SELECT P.point_id as pid3, DR.name as room FROM points as P JOIN DR ON DR.device_id = P.device_id WHERE P.point_id IN (SELECT point_id FROM points_tags WHERE tag_id = {3})) as P3 ON P3.room=P4.room ORDER BY P3.room'''.format(building_id, tag_id1, tag_id2, tag_id3)
+    cur.execute(all_query)
+    everything = cur.fetchall()
+    conn.close()
 
-        cur = conn.cursor()
-        vsp_query = '''SELECT point_id
-                   FROM public.points
-                   WHERE name = %s'''
-        cur.execute(vsp_query, (vsp_string, ))
-        vsp_id = cur.fetchone()[0]
-        cur.close()
-        
-        rm_ids.append(str(temp_id))
-        #rm_ids.append(str(set_id))
-        rm_ids.append(str(vent_id))
-        rm_ids.append(str(vsp_id))
-        
-        evans_df[room] = rm_ids
-        evans_df.to_csv('evans_points.csv', index=False)
+    for room in everything:
+        name = room[0]
+        lst = [room[1], room[2], room[3]]
+        df[name] = lst
+    
+    file_name = building_name.lower().replace(" ", "_") + "_points.csv"
+    df.to_csv(file_name, index=False)
+
+
 	
 def values_in_last_n_days(point_id, days, days_ago=0):
     '''
@@ -118,7 +99,7 @@ def create_float_series(point_id, days):
     Parameters: int point_id to be queried, int number of days to get values from
     Returns: Dataframes for fullseries, detection series (the last day), and prior series (values before the last day), array indices corresponding to each dataframe
     '''
-    values = values_in_last_n_days(point_id, days, days_ago=45)
+    values = values_in_last_n_days(point_id, days, days_ago=337)#to get historical data, use the optional days_ago variable here
     times_arr = [] 
     vals_arr = []
     for value in values:
@@ -177,7 +158,7 @@ def detect_evans_anomalies(days=5, anom_thres=36,  plot_ser=False, plot_comp=Fal
     '''
     building_df = pd.read_csv(EVANS_POINTS_FILE, dtype=str)
     building_df.index=['temp', 'vent', 'virtual set']
-    anom_counts = pd.DataFrame(index=['temp', 'vent',  'set temp diff'], dtype=int) 
+    anom_counts = pd.DataFrame(index=['Room Temperature', 'Valve Angle',  'System Set Temperature and Room Temperature Difference'], dtype=int) 
     anom_rooms = pd.DataFrame(index=['temp', 'vent', 'set temp diff'], dtype=str)    
     
     for column in building_df:
@@ -187,11 +168,15 @@ def detect_evans_anomalies(days=5, anom_thres=36,  plot_ser=False, plot_comp=Fal
         anom_rooms[column] = [anomalies_report_string(room_anoms[0]), anomalies_report_string(room_anoms[1]), anomalies_report_string(room_anoms[2])]
 
     forest_arr = isolation_forest(building_df, days)
-    anom_counts.append(forest_arr)
-
+    forest_arr.columns = anom_counts.columns
+    anom_counts = anom_counts.append(forest_arr)
     return anom_rooms, anom_counts
 
 def isolation_forest(building_df, days):
+    '''
+    Description: A method to run isolation forest anomaly detection on a given building. 
+    Parameters: The dataframe of points for a building created by create_building_csv, the number of days. 
+    '''
     temp_arr = []
     for column in building_df:
         room_ids = building_df.loc[:,column]
@@ -200,11 +185,13 @@ def isolation_forest(building_df, days):
         temp_series, temp_prior_df, temp_detection_df, index, prior_index, detection_index = create_float_series(temp_id, days)
         vsp_series, vsp_prior_df, vsp_detection_df, vsp_index, vsp_prior_index, vsp_detection_index = create_float_series(vsp_id, days)
         diff_series = vsp_series.sub(temp_series).fillna(value=0, axis=0)[-1*days*96::4]
-        temp_arr.append(diff_series)
-    
+        diff_arr = []
+        for i in range(len(diff_series)):
+            diff_arr.append(diff_series.values[i][0])
+        temp_arr.append(diff_arr)
     clf = IsolationForest(random_state=0).fit(temp_arr)
     unweighted = clf.predict(temp_arr)
-    weighted = pd.DataFrame(index=['forest'], dtype=str)
+    weighted = pd.DataFrame(index=['Forest Anomaly Score'], dtype=str)
     for i in range(len(unweighted)):
         if unweighted[i] == 1:
             weighted[i] = 0
@@ -236,7 +223,12 @@ def detect_evans_room(ids, days, building_name="", plot_ser=False, plot_comp=Fal
     room_anoms = [temp_anom, vent_anom, diff_anom]
     return room_anoms, num_room_anoms
 
-def temp_anomalies(name_str, point_id, days, plot_anom=False, heur_upperbound=90, heur_lowerbound=60, heur_emergency_temp=40):
+def temp_anomalies(name_str, point_id, days, plot_anom=False, heur_upperbound=80, heur_lowerbound=60, heur_emergency_temp=40):
+    '''
+    Description: A mathod to perform STL and Heuristic anomaly detection on the temperature values of a given room. 
+    Parameters: the room name string, point id, number of days, plot anomalies boolean values, heuristic upper, lower, and emergency bounds
+    TODO: set up email notifications with rthe emergency temperature!
+    '''
     series_df, decomp, prior_df, detection_df, index, prior_index, detection_index = stl_float(point_id, days)
     stl_expected, greaterbound, lesserbound = get_expected_bounds(decomp, prior_df)
     greaterbound = add_heur_to_bound(greaterbound, heur_upperbound)
@@ -247,6 +239,10 @@ def temp_anomalies(name_str, point_id, days, plot_anom=False, heur_upperbound=90
     return anomalies
 
 def valve_anomalies(name_str, point_id, days, plot_anom=False, heur_limit=95, heur_limit_time=1):
+    '''
+    Description:  A method to perform heuristic anomaly detetion on the valve angle values of a given room.
+    Parameters: the room name str, point id, number of days, plot anomalies boolean value, heuristic upper bound, and the heuristic time limit in hours. 
+    '''
     series_df, prior_df, detection_df, index, prior_index, detection_index = create_float_series(point_id, days)
     beyond_lim_count = 0
     anomalies = []
@@ -262,6 +258,10 @@ def valve_anomalies(name_str, point_id, days, plot_anom=False, heur_limit=95, he
     return anomalies
 
 def virtset_temp_diff_anomalies(name_str, point_id, days, second_point_id, plot_anom=False, heur_upper_limit=5, heur_lower_limit=-5, heur_time_limit=1):
+    '''
+    Description: A method to perform STL and heuristic anomaly detetion on the virtual set temp and actual room temp difference of a room. 
+    Parameters: the room name string, point Id's, number of days, plot anomalies boolean value, heuristic upper and lower bound, and the heuristic time threshold.  
+    '''
     series_df, decomp, prior_df, detection_df, index, prior_index, detection_index, point_id = stl_diff(point_id, second_point_id, days)
     stl_expected, greaterbound, lesserbound= get_expected_bounds(decomp, prior_df)
     greaterbound = add_heur_to_bound(greaterbound, heur_upper_limit)
@@ -271,7 +271,12 @@ def virtset_temp_diff_anomalies(name_str, point_id, days, second_point_id, plot_
         plot_anomalies(name_str, series_df, index, point_id, days, predicted=stl_expected, upperbound=greaterbound, lowerbound=lesserbound, heur_upper = heur_upper_limit, heur_lower=heur_lower_limit)
     return anomalies
 
+
 def add_heur_to_bound(bound, heur, upper=True):
+    '''
+    Description: A method to create bounds combining the STL bound and the heuristic bound. 
+    Parameters: stl bound dataframe, the heuristic int value, and a boolean upper value, that sets whether this is creating an upper or lower bound
+    '''
     for i in range(96):
         if (upper):
             if (bound[i] > heur):
@@ -359,8 +364,11 @@ def get_expected_bounds(decomp, prior_df):
     lesserbound = detection_expected - delta
     return stl_expected, greaterbound, lesserbound
 
-#Plots the original time series over the specified number of days. 
 def plot_series(series_df, index, point_id, days):
+    '''
+    Description: Method to plot the original series of a point
+    Parameters: series dataframe, datetime index, point_id and days
+    '''
     s = series_df.values.tolist()
     plt.figure(figsize=(70,45))
     plt.rcParams.update({'font.size': 40})
@@ -411,7 +419,7 @@ def plot_anomalies(name_id, series_df, index, point_id, days, predicted=None, up
     plt.title("{0} over last {1} days".format(name_id, days))
     filename = "{0}Anomalies".format(name_id)
     plt.savefig(filename)
-    #os.system('mv -f %s %s' % (filename + '.png', IMAGES_DIRECTORY))
+    os.system('mv -f %s %s' % (filename + '.png', IMAGES_DIRECTORY))
     plt.close()
 
 def plot_trend(decomposed_series, index, point_id, days):
@@ -432,19 +440,27 @@ def plot_trend(decomposed_series, index, point_id, days):
     plt.savefig("point{0}trend{1}".format(point_id, index[len(index)-1][:10]))
 
 def plot_seasonal(decomposed_series, index, point_id, days):
+    '''
+    Description: Methods to plot the stl components
+    Parameters: statsmodel decomposed series object, datetime index, point_id and days
+    '''
     seasonal = decomposed_series.seasonal.tolist()
     plt.figure(figsize=(70,45))
     plt.rcParams.update({'font.size': 40})
     plt.plot(index[:96], seasonal[:96], marker='', linestyle='-', label='Seasonality', linewidth=4)
     plt.xlabel("time")
     plt.ylabel("value")
-    plt.xticks(np.arange(0,len(index),step = len(index)/(days*4)), index[0::24], rotation=45)
-    plt.grid(axis=both)
+    plt.xticks(np.arange(0,96,24), index[0:96:24], rotation=45)
+    plt.grid(axis='both')
     plt.legend()
     plt.title("Seasonality of Point {0} over last {1} days".format(point_id, days))
     plt.savefig("point{0}seasonal{1}".format(point_id, index[len(index)-1][:10]))
  
 def plot_residue(decomposed_series, index, point_id, days):
+    '''
+    Description: Methods to plot the stl components
+    Parameters: statsmodel decomposed series object, datetime index, point_id and days
+    '''
     resid = decomposed_series.resid.tolist()
     plt.figure(figsize=(70,45))
     plt.rcParams.update({'font.size': 40})
@@ -467,21 +483,15 @@ def plot_components(decomposed_series, index, point_id, days):
     plot_seasonal(decomposed_series, index, point_id, days)
     plot_residue(decomposed_series, index, point_id, days)
 
-def csv_to_html(filename):
-    df = pd.read_csv(filename)
-    html_text = df.to_html()
-    html_file= open(filename[:-4:] + '.html',"w")
-    html_file.write(html_text)
-    html_file.close()
-
 def main():
-    #create_evans_csv()
+    #create_csv('Evans') - only needs to be done once per building
     evans_anomalies, evans_anom_counts = detect_evans_anomalies(plot_anom=True)
-    #evans_anomalies.transpose().to_csv('evans_anomalies.csv')
-    #evans_anom_counts.transpose().to_csv('evans_anom_counts.csv')
-
-    #os.system('mv -f %s %s' % ('evans_anomalies.csv', CSV_DIRECTORY))
-    #os.system('mv -f %s %s' % ('evans_anom_counts.csv', CSV_DIRECTORY))
+    evans_anomalies.transpose().to_csv('evans_anomalies.csv')
+    evans_anom_counts.transpose().to_csv('evans_anom_counts.csv', index_label='Room')
+    #stl_diff(583, 2233, 5,plot_ser=True, plot_comp=True)
+    
+    os.system('mv -f %s %s' % ('evans_anomalies.csv', CSV_DIRECTORY))
+    os.system('mv -f %s %s' % ('evans_anom_counts.csv', CSV_DIRECTORY))
 
 if __name__ == '__main__':
     main()
