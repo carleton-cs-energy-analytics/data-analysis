@@ -1,11 +1,11 @@
 # data-analysis
 Data analysis files from the server
 
-##STL.py
+## STL.py
 
 This function implements Seasonal Trend Loess Decomposition using pandas and the stldecompose library, as well as basic heuristic models, for anomaly detection. It is run daily by user energy's crontab, generating the anomaly counts of different types for Evans, storing those csv files in  /var/www/frontend.static/csv-files. It also generates graphs of the different data points for each room, and stores them in /var/www/frontend.static/images. 
 
-##To Add a new building to the file:
+## To Add a new building to the file:
 
 There are three important steps to use the existing code on a new building:
 1. Create a csv file of all the rooms and corresponding points in the building using a create_buildingname_csv() method. 
