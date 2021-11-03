@@ -46,7 +46,6 @@ def k_means(data, n = 5, k = 3, plot = True):
     centers = kmeans.cluster_centers_
 
     distances = get_distance_from_nearest_cluster(room_temp, centers)
-    print(distances)
     ordered_indecies = np.argsort(distances, axis = 0)
     indecies = ordered_indecies[-n:]
     values = room_temp[indecies]
@@ -59,7 +58,7 @@ def k_means(data, n = 5, k = 3, plot = True):
 
 def main():
     points_array = np.genfromtxt('evans_points.csv', delimiter=',')
-    kmeans = k_means(points_array, k = 1)
+    k_means(points_array, k = 1)
 
 if __name__ == '__main__':
     main()
