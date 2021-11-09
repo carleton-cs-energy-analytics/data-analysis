@@ -10,7 +10,7 @@ https://medium.datadriveninvestor.com/outlier-detection-with-k-means-clustering-
 
 Written by Dominic Enriquez in collaboration with Ben Preiss
 2 November 2021
-Last Modified: 3 November 2021
+Last Modified: 4 November 2021
 """
 
 import os
@@ -30,53 +30,64 @@ from scipy.spatial.distance import cdist
 from psycopg2 import connect, sql
 from datetime import datetime
 
-def get_distances_and_points(data, centers, labels):
+def generate_test_data():
     '''
+    Generates a list of test data that follows a normal distribution centered at 65 
+    with a standard deviation 15 to resemble temperature data.
+    Each element in data is a list of 96 data points meant to correspond with temperature
+    readings over time. There are 100 such rooms in the list
     '''
-    distances_by_cluster = []
-    indices_by_cluster = []
-    for i, center in enumerate(centers):
-        cluster = np.where(labels == i)[0]
-        distance = np.sqrt((cluster - center) ** 2)
-        distances_by_cluster.append(distance)
-        indices_by_cluster.append(cluster)
-    return distances_by_cluster, indices_by_cluster
+    data = []
+    # for each hypothetical room that we want to track
+    for _ in range(15):
+        room = []
+        # generate 96 temperature readings associated with a particular time index
+        for i in range(10):
+            a = np.random.normal(65, 15)
+            room.append(a)
+        data.append(room)
+    return np.array(data)
 
-def get_outliers(distances, indices, percentile):
+def k_means(data, k = 1, plot = True):
     '''
     '''
-    outliers = []
-    for i in range(len(distances)):
-        outlier_indices = indices[i][np.where(distances[i] > np.percentile(distances[i], percentile))]
-        outliers.append(outlier_indices)
-    return np.array(outliers).flatten()
+    km = KMeans(n_clusters = k)
+    distance_from_all_clusters = km.fit_transform(data)
+    min_distances = [min(distances) for distances in distance_from_all_clusters]
+    sum_distances = [sum(distances) for distances in distance_from_all_clusters]
 
-def k_means(data, k = 3, plot = True, percentile = 90):
-    '''
-    '''
-    x_axis = range(data.shape[1])
-    room_temp = data[1,:]
-    room_temp = room_temp.reshape(-1, 1)
+    mean = np.mean(min_distances)
+    sd = np.std(min_distances)
 
-    kmeans = KMeans(n_clusters = k).fit(room_temp)
-    
-    centers = kmeans.cluster_centers_
-    labels = kmeans.labels_
-
-    distances, indices = get_distances_and_points(room_temp, centers, labels)
-    outliers = get_outliers(distances, indices, percentile)
-
-    values = room_temp[outliers]
-    
+    indices = []
+    for room_index, distance in enumerate(min_distances):
+        if (distance > (mean + 2 * sd)) or (distance < (mean - 2 * sd)):
+            indices.append(room_index)
+    print(len(indices))
+    for index, temperature_data in enumerate(data):
+        if index in indices:
+            #make it red
+            times = []
+            temps = []
+            for time, temp in enumerate(temperature_data):
+                times.append(time)
+                temps.append(temp)
+            plt.plot(times, temps, c = 'r')
+        else:
+            times = []
+            temps = []
+            for time, temp in enumerate(temperature_data):
+                times.append(time)
+                temps.append(temp)
+            plt.plot(times, temps, c = 'k')
+    plt.show()
     if plot:
-        plt.plot(x_axis, room_temp)
-        plt.scatter(outliers, values, color = 'r')
-        plt.show()
-    return kmeans
+        pass
 
 def main():
-    points_array = np.genfromtxt('evans_points.csv', delimiter=',')
-    k_means(points_array, k = 3)
+    data = generate_test_data()
+    k_means(data)
+
 
 if __name__ == '__main__':
     main()
