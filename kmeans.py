@@ -26,10 +26,6 @@ from sklearn.cluster import KMeans
 from sklearn.preprocessing import scale
 from scipy.spatial.distance import cdist
 
-#PostgreSQL interactivity libraries
-from psycopg2 import connect, sql
-from datetime import datetime
-
 def generate_test_data():
     '''
     Generates a list of test data that follows a normal distribution centered at 65 
@@ -39,16 +35,16 @@ def generate_test_data():
     '''
     data = []
     # for each hypothetical room that we want to track
-    for _ in range(15):
+    for _ in range(100):
         room = []
         # generate 96 temperature readings associated with a particular time index
-        for i in range(10):
-            a = np.random.normal(65, 15)
+        for i in range(15):
+            a = np.random.normal(65, 5)
             room.append(a)
         data.append(room)
     return np.array(data)
 
-def k_means(data, k = 1, plot = True):
+def k_means(data, k = 3, plot = True):
     '''
     '''
     km = KMeans(n_clusters = k)
@@ -61,9 +57,9 @@ def k_means(data, k = 1, plot = True):
 
     indices = []
     for room_index, distance in enumerate(min_distances):
-        if (distance > (mean + 2 * sd)) or (distance < (mean - 2 * sd)):
+        if (distance > (mean + 2.3 * sd)):
+            print("Room %d is anomalous" % room_index)
             indices.append(room_index)
-    print(len(indices))
     for index, temperature_data in enumerate(data):
         if index in indices:
             #make it red
@@ -72,14 +68,17 @@ def k_means(data, k = 1, plot = True):
             for time, temp in enumerate(temperature_data):
                 times.append(time)
                 temps.append(temp)
-            plt.plot(times, temps, c = 'r')
+            plt.plot(times, temps, c = 'r', zorder = 2)
         else:
             times = []
             temps = []
             for time, temp in enumerate(temperature_data):
                 times.append(time)
                 temps.append(temp)
-            plt.plot(times, temps, c = 'k')
+            plt.plot(times, temps, c = 'k', zorder = 1)
+    plt.ylim(30,100)
+    if (len(indices) == 0):
+        print("No anomalies detected")
     plt.show()
     if plot:
         pass
@@ -91,3 +90,4 @@ def main():
 
 if __name__ == '__main__':
     main()
+
