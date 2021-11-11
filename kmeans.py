@@ -29,8 +29,8 @@ from scipy.spatial.distance import cdist
 def generate_test_data():
     '''
     Generates a list of test data that follows a normal distribution centered at 65 
-    with a standard deviation 15 to resemble temperature data.
-    Each element in data is a list of 96 data points meant to correspond with temperature
+    with a standard deviation 5 to resemble temperature data.
+    Each element in data is a list of 15 data points meant to correspond with temperature
     readings over time. There are 100 such rooms in the list
     '''
     data = []
@@ -41,24 +41,33 @@ def generate_test_data():
         for _ in range(15):
             room.append(np.random.normal(65, 5))
         data.append(room)
+    anomaly = []
+    for _ in range(15):
+        anomaly.append(np.random.normal(80,5))
+    data.append(anomaly)
     return np.array(data)
 
-def k_means(data, k = 3):
+def k_means(data, k = 3, method = "min_distances"):
     '''
     '''
     km = KMeans(n_clusters = k)
     distance_from_all_clusters = km.fit_transform(data)
-    min_distances = [min(distances) for distances in distance_from_all_clusters]
-    #sum_distances = [sum(distances) for distances in distance_from_all_clusters]
+    if method == "min_distances":
+        distances = [min(distances) for distances in distance_from_all_clusters]
+    elif method == "sum_distances":
+        distances = [sum(distances) for distances in distance_from_all_clusters]
+    else:
+        distances = [min(distances) for distances in distance_from_all_clusters]
 
-    mean = np.mean(min_distances)
-    sd = np.std(min_distances)
+    mean = np.mean(distances)
+    sd = np.std(distances)
 
     anomalous_rooms = []
-    for room_index, distance in enumerate(min_distances):
+    for room_index, distance in enumerate(distances):
         if (distance > (mean + 2.3 * sd)):
             print("Room %d is anomalous" % room_index)
             anomalous_rooms.append(room_index)
+    
     for room_index, temperature_data in enumerate(data):
         times = []
         temps = []
